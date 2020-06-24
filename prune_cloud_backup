@@ -1,0 +1,51 @@
+#!/usr/bin/bash
+
+[[ -f ./prune_cloud_backup.env ]] && . ./prune_cloud_backup.env
+
+[[ -z $S3_BUCKET     ]] && S3_BUCKET=DEFAULT
+[[ -z $EXPIRE_DAILY  ]] && EXPIRE_DAILY=366 # 日次バックアップの保存日数
+[[ -z $EXPIRE_HOURLY ]] && EXPIRE_HOURLY=14 # この日数は全てのバックアップを保持
+
+set -e
+declare -A daily monthly
+
+expire_daily_date=$(date +'%Y-%m-%d' -d "$EXPIRE_DAILY days ago")
+expire_hourly_date=$(date +'%Y-%m-%d' -d "$EXPIRE_HOURLY days ago")
+
+list=$(aws s3api list-objects --bucket $S3_BUCKET --prefix "$S3_PREFIX" | jq '.Contents | sort_by(.LastModified)')
+
+len=$(echo $list | jq 'length')
+for i in $(seq 0 $(($len - 1))); do
+  LastModified=$(echo $list | jq -r ".[$i].LastModified")
+  Key=$(echo $list | jq -r ".[$i].Key")
+
+  date=$(echo $LastModified | cut -dT -f1)
+  month=$(echo $date | cut -d- -f1,2)
+
+  expired=""
+  if [[ $date < $expire_daily_date ]]; then
+    # 月次バックアップ
+    if [[ -z ${monthly[$month]} ]]; then
+      monthly[$month]=$Key
+    else 
+      expired="expired"
+    fi
+  elif [[ $date < $expire_hourly_date ]]; then
+    # 日次バックアップ
+    if [[ -z ${daily[$date]} ]]; then
+      daily[$date]=$Key
+    else 
+      expired="expired"
+    fi
+  fi
+
+  # echo "$Key $date $month $expired"
+  if [[ ! -z "$expired" ]]; then
+    aws s3 rm --quiet "s3://$S3_BUCKET/$Key"
+    echo "$Key $date $month deleted"
+  fi
+done
+
+
+
+
