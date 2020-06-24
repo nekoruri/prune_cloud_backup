@@ -19,6 +19,8 @@
 
 ## 権限
 
+TODO: 未チェック
+
 * S3
   * s3:ListObject
   * s3:DeleteObject
